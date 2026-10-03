@@ -1,0 +1,16 @@
+aws_region            = "us-east-1"
+project_name          = "waf-threatmon"
+environment           = "production"
+
+# Rate Limit threshold: max requests per 5 minutes per IP
+rate_limit_threshold  = 100
+
+# Bot control settings
+enable_bot_control    = true
+
+# Set to true during testing evaluation to avoid blocking legitimate users (Solves Bottleneck 1)
+count_mode_testing_sqli = false
+count_mode_testing_bots = false
+
+# Pinned managed rule version (Solves Bottleneck 2)
+sqli_rule_group_version = "Version_2.0"

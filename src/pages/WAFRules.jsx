@@ -3,52 +3,52 @@ import { useState } from 'react'
 const INITIAL_RULES = [
   {
     id: 'WR-001', name: 'AWSManagedRulesSQLiRuleSet', type: 'Managed', priority: 1,
-    action: 'BLOCK', status: true, hits: 4820, description: 'Protects against SQL injection attacks.',
+    action: 'BLOCK', status: true, hits: 4820, description: 'Protects against SQL injection attacks with pinned version v2.0 (solves unexpected update breaking).',
     group: 'AWS Managed',
+    problemStatementTag: 'Use Case 1: Block SQL Injection',
+    versionPinned: 'Version_2.0',
+    modeNote: 'Can override to COUNT during testing gaps',
   },
   {
-    id: 'WR-002', name: 'XSSBlockRuleSet-v2', type: 'Custom', priority: 2,
-    action: 'BLOCK', status: true, hits: 2340, description: 'Blocks cross-site scripting attempts in headers and query strings.',
+    id: 'WR-002', name: 'BlockBadBotsAndScrapers', type: 'Custom', priority: 2,
+    action: 'BLOCK', status: true, hits: 2340, description: 'Blocks malicious scraping bots, headless browsers, and crawler traffic (Scrapy, BadBot, HeadlessChrome).',
     group: 'Custom',
+    problemStatementTag: 'Use Case 1: Block Bot Traffic',
+    modeNote: 'Evaluates User-Agent signatures',
   },
   {
-    id: 'WR-003', name: 'RateLimitRule-4000rpm', type: 'Rate-based', priority: 3,
-    action: 'BLOCK', status: true, hits: 3120, description: 'Blocks IPs exceeding 4,000 requests per minute.',
+    id: 'WR-003', name: 'RateLimitAbusiveClients', type: 'Rate-based', priority: 3,
+    action: 'BLOCK', status: true, hits: 3120, description: 'Blocks client IPs exceeding 100 requests per 5-minute evaluation period.',
     group: 'Rate Limiting',
+    problemStatementTag: 'Use Case 2: Rate-Limit Abusive Clients',
+    modeNote: 'Rate threshold: 100 req / 5 min',
   },
   {
-    id: 'WR-004', name: 'GeoMatchRule-CN-KP-RU-IR', type: 'Custom', priority: 4,
-    action: 'BLOCK', status: true, hits: 940, description: 'Blocks traffic from high-risk geographic regions.',
-    group: 'Geo Control',
-  },
-  {
-    id: 'WR-005', name: 'AWSManagedRulesCommonRuleSet', type: 'Managed', priority: 5,
-    action: 'BLOCK', status: true, hits: 1840, description: 'Core rule set protecting against OWASP Top 10.',
+    id: 'WR-004', name: 'AWSManagedRulesCommonRuleSet', type: 'Managed', priority: 4,
+    action: 'BLOCK', status: true, hits: 1840, description: 'Core rule set protecting against OWASP Top 10 vulnerabilities.',
     group: 'AWS Managed',
+    problemStatementTag: 'OWASP Core Defense',
   },
   {
-    id: 'WR-006', name: 'BotControlManagedRule', type: 'Managed', priority: 6,
-    action: 'COUNT', status: true, hits: 1280, description: 'Identifies and manages bot traffic.',
+    id: 'WR-005', name: 'BotControlManagedRule', type: 'Managed', priority: 5,
+    action: 'COUNT', status: true, hits: 1280, description: 'Identifies and scores automated bot traffic (running in COUNT mode for testing evaluation).',
     group: 'AWS Managed',
+    problemStatementTag: 'Bottleneck: Count-Mode Testing',
+    modeNote: 'COUNT mode active for testing gap analysis',
   },
   {
-    id: 'WR-007', name: 'AWSManagedRulesKnownBadInputs', type: 'Managed', priority: 7,
+    id: 'WR-006', name: 'AWSManagedRulesKnownBadInputs', type: 'Managed', priority: 6,
     action: 'BLOCK', status: true, hits: 760, description: 'Blocks requests matching patterns for known exploits (SSRF, XXE, Log4j).',
     group: 'AWS Managed',
   },
   {
-    id: 'WR-008', name: 'HTTPFloodProtection', type: 'Rate-based', priority: 8,
-    action: 'BLOCK', status: false, hits: 420, description: 'Protects against HTTP flood DDoS attacks (currently disabled for review).',
-    group: 'Rate Limiting',
+    id: 'WR-007', name: 'GeoMatchRule-HighRisk', type: 'Custom', priority: 7,
+    action: 'BLOCK', status: true, hits: 940, description: 'Blocks traffic from high-risk geographic regions.',
+    group: 'Geo Control',
   },
   {
-    id: 'WR-009', name: 'AuthHeaderCheck', type: 'Custom', priority: 9,
+    id: 'WR-008', name: 'AuthHeaderCheck', type: 'Custom', priority: 8,
     action: 'COUNT', status: true, hits: 190, description: 'Counts requests missing Authorization header to /api/admin paths.',
-    group: 'Custom',
-  },
-  {
-    id: 'WR-010', name: 'SizeRestrictionRule', type: 'Custom', priority: 10,
-    action: 'BLOCK', status: false, hits: 88, description: 'Blocks requests with body size exceeding 8KB (disabled — under configuration).',
     group: 'Custom',
   },
 ]
@@ -166,6 +166,16 @@ export default function WAFRules() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <span className="rule-name">{rule.name}</span>
+                {rule.problemStatementTag && (
+                  <span className="badge badge-info" style={{ fontSize: '10px' }}>
+                    {rule.problemStatementTag}
+                  </span>
+                )}
+                {rule.versionPinned && (
+                  <span className="badge badge-success" style={{ fontSize: '10px' }}>
+                    🔒 Pinned: {rule.versionPinned}
+                  </span>
+                )}
                 <span className={`badge ${rule.type === 'Managed' ? 'badge-info' : rule.type === 'Rate-based' ? 'badge-warning' : 'badge-neutral'}`}>
                   {rule.type}
                 </span>
@@ -174,9 +184,12 @@ export default function WAFRules() {
                 </span>
               </div>
               <div className="rule-desc">{rule.description}</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Group: {rule.group} &nbsp;·&nbsp; {rule.id} &nbsp;·&nbsp;
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span>Group: {rule.group} &nbsp;·&nbsp; {rule.id}</span>
                 <span style={{ color: 'var(--status-critical)' }}>{rule.hits.toLocaleString()} hits</span>
+                {rule.modeNote && (
+                  <span style={{ color: 'var(--status-warning)', fontWeight: 600 }}>• {rule.modeNote}</span>
+                )}
               </div>
             </div>
 

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 export default function Settings() {
-  const [apiUrl, setApiUrl] = useState('http://localhost:8080')
+  const [apiUrl, setApiUrl] = useState(import.meta.env.VITE_API_URL || 'https://v86gy0po9l.execute-api.us-east-1.amazonaws.com/prod')
   const [apiKey, setApiKey] = useState('')
   const [wafArn, setWafArn] = useState('')
   const [region, setRegion] = useState('us-east-1')
