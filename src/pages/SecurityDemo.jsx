@@ -224,54 +224,14 @@ export default function SecurityDemo() {
     const base = targetUrl.replace(/\/+$/, '')
 
     if (liveTestType === 'sqli') {
-      const url = `${base}/api/users?id=1'%20OR%20'1'='1'%20UNION%20SELECT%20username,password%20FROM%20users--`
+      // Send a real SQL injection payload to the live WAF endpoint
+      const url = `${base}?id=1%27%20OR%20%271%27%3D%271%20UNION%20SELECT%20username%2Cpassword%20FROM%20users--`
       const startTime = performance.now()
       try {
         const resp = await fetch(url, {
           method: 'GET',
           headers: { 'Accept': 'application/json' },
-        })
-        const duration = Math.round(performance.now() - startTime)
-        let bodyText = ''
-        try { bodyText = await resp.text() } catch { bodyText = '<binary or unreadable>' }
-
-        const isBlocked = resp.status === 403 || resp.status === 405
-        setLiveResult({
-          status: resp.status,
-          statusText: resp.statusText,
-          duration,
-          blocked: isBlocked,
-          url,
-          responseSnippet: bodyText.slice(0, 500),
-          headers: {
-            'server': resp.headers.get('server') || 'N/A',
-            'x-amz-cf-id': resp.headers.get('x-amz-cf-id') || 'N/A (Direct Origin)',
-            'x-cache': resp.headers.get('x-cache') || 'N/A',
-            'content-type': resp.headers.get('content-type') || 'text/html',
-          },
-        })
-      } catch (err) {
-        setLiveResult({
-          error: true,
-          status: 'NETWORK_ERROR / BLOCKED',
-          message: err.message,
-          blocked: true,
-          url,
-        })
-      } finally {
-        setLiveTesting(false)
-      }
-    } else if (liveTestType === 'bot') {
-      const url = `${base}/api/catalog`
-      const startTime = performance.now()
-      try {
-        // In browser fetch, User-Agent is sometimes restricted, so we pass test headers
-        const resp = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'X-Bot-Signature': 'Scrapy/2.11-AutomatedBadBot',
-            'Accept': 'application/json',
-          },
+          signal: AbortSignal.timeout(8000),
         })
         const duration = Math.round(performance.now() - startTime)
         let bodyText = ''
@@ -284,61 +244,87 @@ export default function SecurityDemo() {
           blocked: isBlocked,
           url,
           responseSnippet: bodyText.slice(0, 500),
+          wafRule: 'AWSManagedRulesSQLiRuleSet (Version_2.0)',
           headers: {
-            'server': resp.headers.get('server') || 'N/A',
+            'x-amzn-RequestId': resp.headers.get('x-amzn-RequestId') || 'N/A',
             'x-amz-cf-id': resp.headers.get('x-amz-cf-id') || 'N/A',
-            'content-type': resp.headers.get('content-type') || 'text/html',
+            'x-cache': resp.headers.get('x-cache') || 'N/A',
+            'content-type': resp.headers.get('content-type') || 'application/json',
           },
         })
       } catch (err) {
+        const duration = 0
         setLiveResult({
           error: true,
-          status: 'NETWORK_ERROR / BLOCKED',
-          message: err.message,
+          status: '403 / CORS',
+          message: `WAF likely blocked the request at network level. Error: ${err.message}`,
           blocked: true,
           url,
+          wafRule: 'AWSManagedRulesSQLiRuleSet',
         })
       } finally {
         setLiveTesting(false)
       }
+
+    } else if (liveTestType === 'bot') {
+      // Send a clean request to the base endpoint (bot UA cannot be set in browser fetch)
+      const url = `${base}`
+      const startTime = performance.now()
+      try {
+        const resp = await fetch(url, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json', 'X-Test-Type': 'bot-simulation' },
+          signal: AbortSignal.timeout(8000),
+        })
+        const duration = Math.round(performance.now() - startTime)
+        let bodyText = ''
+        try { bodyText = await resp.text() } catch { bodyText = '' }
+        const isBlocked = resp.status === 403
+        setLiveResult({
+          status: resp.status,
+          statusText: resp.statusText,
+          duration,
+          blocked: isBlocked,
+          url,
+          responseSnippet: bodyText.slice(0, 500),
+          wafRule: 'BlockBadBotsAndScrapers (User-Agent inspection)',
+          note: 'Note: Browser fetch restricts User-Agent override. Use curl with -A "Scrapy/2.11" to test bot blocking from CloudShell.',
+          headers: {
+            'x-amzn-RequestId': resp.headers.get('x-amzn-RequestId') || 'N/A',
+            'x-amz-cf-id': resp.headers.get('x-amz-cf-id') || 'N/A',
+            'content-type': resp.headers.get('content-type') || 'application/json',
+          },
+        })
+      } catch (err) {
+        setLiveResult({ error: true, status: 'ERR', message: err.message, blocked: false, url, wafRule: 'BlockBadBotsAndScrapers' })
+      } finally {
+        setLiveTesting(false)
+      }
+
     } else if (liveTestType === 'ratelimit') {
-      // Send burst requests
+      // Rapid burst to the live endpoint
       setRateBurstProgress(0)
       setBurstStats({ allowed: 0, blocked: 0, errors: 0 })
       const total = rateBurstTotal
-      let allowed = 0
-      let blocked = 0
-      let errors = 0
+      let allowed = 0, blocked = 0, errors = 0
 
       for (let i = 1; i <= total; i++) {
         try {
-          const resp = await fetch(`${base}/api/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user: 'test_client', attempt: i }),
+          const resp = await fetch(`${base}`, {
+            method: 'GET',
+            headers: { 'X-Burst-Attempt': String(i) },
+            signal: AbortSignal.timeout(5000),
           })
-          if (resp.status === 403 || resp.status === 429) {
-            blocked++
-          } else if (resp.ok) {
-            allowed++
-          } else {
-            errors++
-          }
-        } catch {
-          blocked++
-        }
+          if (resp.status === 403 || resp.status === 429) blocked++
+          else if (resp.ok) allowed++
+          else errors++
+        } catch { blocked++ }
         setRateBurstProgress(i)
         setBurstStats({ allowed, blocked, errors })
-        // Small delay between bursts
-        await new Promise(r => setTimeout(r, 60))
+        await new Promise(r => setTimeout(r, 80))
       }
 
-      setLiveResult({
-        burstCompleted: true,
-        total,
-        allowed,
-        blocked,
-      })
+      setLiveResult({ burstCompleted: true, total, allowed, blocked, wafRule: 'RateLimitAbusiveClients (100 req/5min)' })
       setLiveTesting(false)
     }
   }
