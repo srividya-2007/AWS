@@ -1,4 +1,34 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
+
+const LIVE_TYPES = [
+  { type: 'SQL Injection',       sev: 'critical', action: 'BLOCK', rule: 'AWSManagedRulesSQLiRuleSet',       path: '/api/users?id=1%20OR%201%3D1' },
+  { type: 'XSS Injection',       sev: 'warning',  action: 'BLOCK', rule: 'XSSBlockRuleSet-v2',               path: '/search?q=%3Cscript%3Ealert(1)%3C/script%3E' },
+  { type: 'Rate Limit Exceeded', sev: 'critical', action: 'BLOCK', rule: 'RateLimitAbusiveClients',          path: '/api/login' },
+  { type: 'Bot Signature',       sev: 'warning',  action: 'COUNT', rule: 'BlockBadBotsAndScrapers',          path: '/api/catalog' },
+  { type: 'Path Traversal',      sev: 'warning',  action: 'BLOCK', rule: 'AWSManagedRulesCommonRuleSet',     path: '/api/../../etc/passwd' },
+  { type: 'SSRF Probe',          sev: 'critical', action: 'BLOCK', rule: 'AWSManagedRulesKnownBadInputs',   path: '/api/fetch?url=http://169.254.169.254/latest' },
+  { type: 'Geo-Block',           sev: 'info',     action: 'BLOCK', rule: 'GeoMatchRule-HighRisk',            path: '/api/products' },
+  { type: 'Missing Auth Header', sev: 'info',     action: 'COUNT', rule: 'AuthHeaderCheck',                  path: '/api/admin' },
+]
+const LIVE_IPS = ['185.220.101.45','104.21.55.200','91.108.56.130','5.188.62.201','45.155.205.85','77.88.55.88','162.158.78.12','194.165.16.11']
+const LIVE_COUNTRIES = ['Russia','United States','Germany','Ukraine','China','Netherlands','Iran','Brazil']
+let incCounter = 48
+
+function generateLiveAlert() {
+  const t = LIVE_TYPES[Math.floor(Math.random() * LIVE_TYPES.length)]
+  const idx = Math.floor(Math.random() * LIVE_IPS.length)
+  const now = new Date()
+  const id = `INC-${String(incCounter++).padStart(4, '0')}`
+  return {
+    ...t,
+    id,
+    ip: LIVE_IPS[idx],
+    country: LIVE_COUNTRIES[idx],
+    time: `${now.toISOString().slice(0,10)} ${now.toTimeString().slice(0,8)}`,
+    status: 'Open',
+    isNew: true,
+  }
+}
 
 const INITIAL_ALERTS = [
   { id: 'INC-0047', sev: 'critical', type: 'SQL Injection', ip: '185.220.101.45', country: 'Russia', action: 'BLOCK', rule: 'AWSManagedRulesSQLiRuleSet', time: '2026-10-04 06:12:14', path: '/api/users?id=1%20OR%201%3D1', status: 'Open' },
@@ -26,6 +56,23 @@ export default function Alerts() {
   const [sortDir, setSortDir] = useState('desc')
   const [selectedAlert, setSelectedAlert] = useState(null)
   const [toastMessage, setToastMessage] = useState(null)
+  const [liveCount, setLiveCount] = useState(0)
+  const alertTimerRef = useRef(null)
+
+  // ── Auto-stream new security alerts every 5-9 seconds ──
+  useEffect(() => {
+    function scheduleNext() {
+      const delay = 5000 + Math.random() * 4000
+      alertTimerRef.current = setTimeout(() => {
+        const newAlert = generateLiveAlert()
+        setAlerts(prev => [newAlert, ...prev])
+        setLiveCount(c => c + 1)
+        scheduleNext()
+      }, delay)
+    }
+    scheduleNext()
+    return () => clearTimeout(alertTimerRef.current)
+  }, [])
 
   function showToast(msg) {
     setToastMessage(msg)
@@ -103,8 +150,20 @@ export default function Alerts() {
     <>
       <div className="page-title-row">
         <div>
-          <h1 className="page-title">Alerts &amp; Incidents</h1>
-          <p className="page-subtitle">Real-time AWS WAF security threat event stream &amp; triage</p>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            Alerts &amp; Incidents
+            {liveCount > 0 && (
+              <span style={{
+                fontSize: 11, background: 'rgba(220, 38, 38, 0.12)', color: 'var(--status-critical)',
+                padding: '2px 9px', borderRadius: 99, fontWeight: 700, border: '1px solid rgba(220, 38, 38, 0.3)',
+                display: 'flex', alignItems: 'center', gap: 5,
+              }}>
+                <span className="live-pulse" style={{ color: 'var(--status-critical)' }} />
+                +{liveCount} live
+              </span>
+            )}
+          </h1>
+          <p className="page-subtitle">Streaming realtime AWS WAF security events &amp; incident triage &middot; Auto-updating every few seconds</p>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           <button id="export-alerts-btn" className="btn btn-secondary" onClick={() => exportCSV(filtered)}>
